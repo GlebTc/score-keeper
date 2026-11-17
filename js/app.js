@@ -29,6 +29,9 @@ let confirmTimer = 0;
 let toastTimer = 0;
 let recognition = null;
 let listening = false;
+let micWanted = false;
+let micStarts = 0;
+let restartTimer = 0;
 let lastHandled = { text: "", at: 0 };
 let ignoreUntil = 0;
 let wakeLock = null;
@@ -194,6 +197,34 @@ function vibrate() {
   navigator.vibrate?.(12);
 }
 
+function celebrate(x, y, colors, count) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const layer = $("celebrate");
+  const pieces = [];
+  for (let i = 0; i < count; i += 1) {
+    const piece = document.createElement("i");
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 28 + Math.random() * (count > 20 ? 170 : 78);
+    piece.className = "confetti";
+    piece.style.left = `${x}px`;
+    piece.style.top = `${y}px`;
+    piece.style.background = colors[i % colors.length];
+    piece.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+    piece.style.setProperty("--dy", `${Math.sin(angle) * distance - 24}px`);
+    piece.style.setProperty("--rot", `${Math.random() * 540 - 270}deg`);
+    layer.appendChild(piece);
+    pieces.push(piece);
+  }
+  window.setTimeout(() => pieces.forEach((piece) => piece.remove()), 900);
+}
+
+function celebrateTeam(index, count) {
+  const card = $(`card-${index}`);
+  const rect = card.getBoundingClientRect();
+  const colors = [state.teams[index].color, "#fff7ea"];
+  celebrate(rect.left + rect.width / 2, rect.top + rect.height * 0.38, colors, count);
+}
+
 function pushHistory(label) {
   state.history.push({
     label,
@@ -315,6 +346,7 @@ function addPoints(index, amount) {
     setDetail(message);
     announce(`${message}. Sets ${state.sets[0]} to ${state.sets[1]}.`);
     if (!scoringLocked()) toast(message);
+    celebrateTeam(index, scoringLocked() ? 42 : 26);
     return;
   }
   confirmOpen = false;
@@ -322,6 +354,7 @@ function addPoints(index, amount) {
   flash(index);
   chime(true);
   vibrate();
+  celebrateTeam(index, 12);
   const call = gamePointCall();
   setDetail(call || `${name} +${amount}`);
   if (call) speak(call);
@@ -385,6 +418,7 @@ function awardSet(index) {
   announce(`${message}. Sets ${state.sets[0]} to ${state.sets[1]}.`);
   if (!scoringLocked()) toast(message);
   chime(true);
+  celebrateTeam(index, scoringLocked() ? 42 : 26);
 }
 
 function clearPoints() {
@@ -536,7 +570,7 @@ function handleTranscript(input, { typed = false } = {}) {
 }
 
 function refreshListenStatus() {
-  if (!recognition) {
+  if (!speechCtor()) {
     setStatus("Type a command, or use the + buttons.");
     return;
   }
@@ -548,7 +582,7 @@ function refreshListenStatus() {
 }
 
 function toggleMic() {
-  if (!recognition) {
+  if (!speechCtor()) {
     $("command-input").focus();
     return;
   }
@@ -556,45 +590,42 @@ function toggleMic() {
   else startListening();
 }
 
-function startListening() {
-  if (!recognition) return;
-  recognition.continuous = !!state.keepListening;
-  recognition.interimResults = true;
-  listening = true;
-  render();
-  refreshListenStatus();
+function speechCtor() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function releaseRecognizer() {
+  const rec = recognition;
+  recognition = null;
+  if (!rec) return;
+  rec.onresult = null;
+  rec.onerror = null;
+  rec.onend = null;
   try {
-    recognition.start();
+    rec.abort();
   } catch {
-    /* start throws if recognition is already running */
+    /* the session was already closed, which is what happens after a reload */
   }
 }
 
-function stopListening() {
+function micGaveUp(message) {
+  window.clearTimeout(restartTimer);
+  micWanted = false;
   listening = false;
-  try {
-    recognition?.stop();
-  } catch {
-    /* already stopped */
-  }
+  releaseRecognizer();
   render();
-  refreshListenStatus();
+  setStatus(message);
 }
 
-function setupRecognition() {
-  const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Ctor) {
-    $("mic").disabled = true;
-    $("support").hidden = false;
-    $("support").textContent = "This browser can’t hear commands. Use Chrome, Edge, or Safari — or type a command.";
-    refreshListenStatus();
-    return;
-  }
+function attachRecognizer() {
+  const Ctor = speechCtor();
+  if (!Ctor) return null;
   const rec = new Ctor();
   rec.lang = "en-US";
-  rec.continuous = true;
+  rec.continuous = !!state.keepListening && !isIOS();
   rec.interimResults = true;
   rec.maxAlternatives = 5;
+  let heard = false;
   rec.onresult = (event) => {
     if (performance.now() < ignoreUntil) return;
     let interim = "";
@@ -608,48 +639,121 @@ function setupRecognition() {
       setDetail(interim);
       return;
     }
+    heard = true;
+    micStarts = 0;
     for (const result of finals) {
       const alternatives = [...result].slice(0, 5).map((alt) => alt.transcript);
       handleTranscript(alternatives);
     }
-    if (listening && !state.keepListening) stopListening();
+    if (micWanted && !state.keepListening) stopListening();
   };
   rec.onerror = (event) => {
     if (event.error === "aborted" || event.error === "no-speech") return;
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-      listening = false;
-      render();
-      setStatus("Microphone is blocked. Allow the mic for this site, then tap the button again.");
+      micGaveUp("Microphone is blocked. Allow the mic for this site, then tap the button again.");
+      return;
+    }
+    if (event.error === "network") {
+      micGaveUp("Voice needs an internet connection. Tap the mic to try again.");
       return;
     }
     if (event.error === "audio-capture") {
-      listening = false;
-      render();
-      setStatus("No microphone found. Type a command or tap the + buttons.");
+      micGaveUp("No microphone found. Type a command or tap the + buttons.");
     }
   };
   rec.onend = () => {
-    if (!listening) {
-      refreshListenStatus();
-      return;
-    }
-    if (!state.keepListening) {
+    if (recognition !== rec) return;
+    if (!micWanted) {
       listening = false;
       render();
       refreshListenStatus();
       return;
     }
-    window.setTimeout(() => {
-      if (!listening) return;
+    if (!state.keepListening || isIOS()) {
+      const missed = !heard;
+      micWanted = false;
+      listening = false;
+      render();
+      if (missed) setStatus("Tap the mic and say the point.");
+      else refreshListenStatus();
+      return;
+    }
+    window.clearTimeout(restartTimer);
+    micStarts += 1;
+    if (micStarts > 3) {
+      micGaveUp("Mic paused. Tap it to listen again.");
+      return;
+    }
+    restartTimer = window.setTimeout(() => {
+      if (!micWanted) return;
+      const next = attachRecognizer();
+      if (!next) return;
       try {
-        rec.start();
+        next.start();
       } catch {
-        /* the browser can still be shutting the previous session down */
+        micGaveUp("Tap the mic to listen again.");
       }
-    }, 250);
+    }, 300);
   };
   recognition = rec;
+  return rec;
+}
+
+function startListening() {
+  if (!speechCtor()) return;
+  window.clearTimeout(restartTimer);
+  micStarts = 0;
+  micWanted = true;
+  listening = true;
+  render();
   refreshListenStatus();
+  releaseRecognizer();
+  const rec = attachRecognizer();
+  try {
+    rec.start();
+  } catch {
+    micGaveUp("Tap the mic to listen again.");
+  }
+}
+
+function stopListening() {
+  window.clearTimeout(restartTimer);
+  micWanted = false;
+  listening = false;
+  releaseRecognizer();
+  render();
+  refreshListenStatus();
+}
+
+function setupRecognition() {
+  if (!speechCtor()) {
+    $("mic").disabled = true;
+    $("support").hidden = false;
+    $("support").textContent = "This browser can’t hear commands. Use Chrome, Edge, or Safari — or type a command.";
+    refreshListenStatus();
+    return;
+  }
+  refreshListenStatus();
+}
+
+function pauseMic() {
+  window.clearTimeout(restartTimer);
+  releaseRecognizer();
+  listening = false;
+  if (!state.keepListening || isIOS()) micWanted = false;
+  render();
+  refreshListenStatus();
+}
+
+function resumeMic() {
+  if (!micWanted || !state.keepListening || isIOS()) {
+    listening = false;
+    render();
+    refreshListenStatus();
+    return;
+  }
+  if (listening && recognition) return;
+  startListening();
 }
 
 async function updateWake() {
@@ -890,7 +994,13 @@ function bindUi() {
     }
   });
 
-  document.addEventListener("visibilitychange", updateWake);
+  document.addEventListener("visibilitychange", () => {
+    updateWake();
+    if (document.visibilityState === "hidden") pauseMic();
+    else resumeMic();
+  });
+  window.addEventListener("pagehide", pauseMic);
+  window.addEventListener("pageshow", resumeMic);
   document.addEventListener("pointerdown", () => updateWake(), { once: true });
 
   window.addEventListener("beforeinstallprompt", (event) => {

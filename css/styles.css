@@ -331,12 +331,34 @@ h1 { margin: 0; font-size: 1.2rem; }
   padding: 0.35rem 0.7rem;
 }
 
+.celebrate {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.confetti {
+  position: absolute;
+  width: 0.45rem;
+  height: 0.7rem;
+  margin: -0.35rem 0 0 -0.22rem;
+  border-radius: 0.12rem;
+  animation: confetti 850ms ease-out forwards;
+}
+
+@keyframes confetti {
+  0% { transform: translate(0, 0) rotate(0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.6); opacity: 0; }
+}
+
 .toast {
   position: fixed;
   top: calc(env(safe-area-inset-top) + 0.7rem);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 30;
+  z-index: 40;
   margin: 0;
   padding: 0.55rem 0.9rem;
   border-radius: 999px;

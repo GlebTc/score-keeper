@@ -201,6 +201,7 @@ const GUESS_WORDS = new Set([
   "yes",
   "yeah",
   "reset",
+  "restart",
   "game",
   "match",
   "next",
@@ -383,10 +384,10 @@ function metaCommand(text) {
   if (/^(stop|stop listening|mute|quiet)$/.test(text)) return { type: "stop" };
   if (/^(yes|yeah|yep|confirm|do it)$/.test(text)) return { type: "confirm" };
   if (/^(no|nope|cancel)$/.test(text)) return { type: "cancel" };
-  if (/^(next set|new set|reset points|reset the points|clear points|clear the points|zero points|zero the points)$/.test(text)) {
+  if (/^(next set|new set|reset points|reset the points|clear points|clear the points|zero points|zero the points|reset score|reset the score|clear score|clear the score|restart score|restart the score|restart points|restart the points)$/.test(text)) {
     return { type: "newSet" };
   }
-  if (/^(new game|new match|start over|reset|reset game|reset match|reset score|reset the game|reset the match|reset the score|reset everything|clear score|clear the score|clear game|clear the game|clear match|clear the match)$/.test(text)) {
+  if (/^(new game|new match|start over|reset|reset game|reset match|reset the game|reset the match|reset everything|clear game|clear the game|clear match|clear the match|restart game|restart the game|restart match|restart the match)$/.test(text)) {
     return { type: "reset" };
   }
   if (text.split(" ").length <= 8 && /\b(what|whats|tell|current|how)\b.*\bscore\b/.test(text)) {
