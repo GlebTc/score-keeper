@@ -192,11 +192,8 @@ function showWin(index, match) {
   winTimer = window.setTimeout(() => {
     banner.hidden = true;
   }, 5000);
-  const spoken = match
-    ? `${name} wins the match. Sets ${state.sets[0]} to ${state.sets[1]}.`
-    : `${name} takes the set. Sets ${state.sets[0]} to ${state.sets[1]}.`;
-  setDetail(match ? `${name} wins` : `${name} takes the set`);
-  speak(spoken);
+  setDetail(`${name} wins`);
+  speak(`${name} wins.`);
 }
 
 function hideWin() {

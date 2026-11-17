@@ -457,53 +457,70 @@ function teamSide(label, teams) {
   return hits.length === 1 ? hits[0] : null;
 }
 
-function settingsCommand(text, teams) {
-  const preset = text.match(/^(volleyball|volley ball)$/)
-    ? "volleyball"
-    : text.match(/^(table tennis|tabletennis|ping pong|pingpong)$/)
-      ? "tabletennis"
-      : text.match(/^(first to 21|first to twenty one)$/)
-        ? "to21"
-        : text.match(/^(free play|freeplay)$/)
-          ? "free"
-          : null;
-  if (preset) return { type: "preset", preset };
+function cleanAsk(text) {
+  return text.replace(/\b(?:please|thanks|thank you)\b/g, " ").replace(/\s+/g, " ").trim();
+}
 
-  const playTo = text.match(/^play to (.+?)(?: points)?$/);
-  if (playTo) {
+function gamePreset(text) {
+  if (/^(?:volley ?ball)$/.test(text)) return "volleyball";
+  if (/^(?:table ?tennis|ping ?pong)$/.test(text)) return "tabletennis";
+  if (/^(?:first to (?:21|twenty one))$/.test(text)) return "to21";
+  if (/^(?:free ?play)$/.test(text)) return "free";
+  return null;
+}
+
+function settingsCommand(text, teams) {
+  text = cleanAsk(text);
+  const lead = text.match(/^(?:(?:lets|let us)\s+)?(?:play|start|set|change|switch)(?:\s+the)?(?:\s+game)?(?:\s+to)?\s+(.+)$/);
+  const aimed = lead ? lead[1] : text;
+
+  const playTo = text.match(/^(?:(?:lets|let us)\s+)?(?:play|go|first) to (.+?)(?: points)?$/)
+    || text.match(/^(?:set )?(?:the )?points to (.+)$/);
+  if (playTo && !gamePreset(text)) {
     const points = readSmallNumber(playTo[1]);
     if (points >= 1 && points <= 99) return { type: "pointsTo", points };
   }
-  const setsTo = text.match(/^first to (.+?) sets?$/);
-  if (setsTo && !/^21$|^twenty one$/.test(setsTo[1])) {
+  const setsTo = text.match(/^(?:first to|play) (.+?) sets?$/);
+  if (setsTo) {
     const sets = readSmallNumber(setsTo[1]);
     if (sets >= 1 && sets <= 9) return { type: "setsTo", sets };
   }
-  if (/^(?:must )?win by (?:2|two)$/.test(text)) return { type: "winByTwo", enabled: true };
-  if (/^(?:no|not|dont|do not) (?:must )?win by (?:2|two)$/.test(text)) return { type: "winByTwo", enabled: false };
+  if (/^(?:must |have to )?win by (?:2|two)(?: points)?$/.test(text)) return { type: "winByTwo", enabled: true };
+  if (/^(?:no|not|dont|do not) (?:must |have to )?win by (?:2|two)(?: points)?$/.test(text)) {
+    return { type: "winByTwo", enabled: false };
+  }
 
-  const color = text.match(new RegExp(`^(left|right) colou?r (${COLOR_PATTERN})$`))
-    || text.match(new RegExp(`^(?:make|change|set|turn) (?:the )?(left|right)(?: team)?(?: colou?r)?(?: to)? (${COLOR_PATTERN})$`));
+  const preset = gamePreset(text) || gamePreset(aimed);
+  if (preset) return { type: "preset", preset };
+
+  const sideColor = `(left|right)(?:\\s+team)?(?:\\s+colou?r)?(?:\\s+to)?\\s+(${COLOR_PATTERN})`;
+  const color = text.match(new RegExp(`^${sideColor}$`))
+    || text.match(new RegExp(`^colou?r(?:\\s+of)?(?:\\s+the)?\\s+${sideColor}$`))
+    || text.match(new RegExp(`^(?:make|change|set|turn)(?:\\s+the)?(?:\\s+colou?r(?:\\s+of)?)?(?:\\s+the)?\\s+${sideColor}$`));
   if (color) return { type: "color", side: color[1] === "left" ? 0 : 1, color: color[2] };
 
-  const renameSide = text.match(/^rename (?:the )?(left|right)(?: team)? to (.+)$/);
+  const renameSide = text.match(/^rename(?:\s+the)?\s+(left|right)(?:\s+team)?(?:\s+to)?\s+(.+)$/);
   if (renameSide) {
     const name = titleName(renameSide[2]);
     if (name) return { type: "rename", side: renameSide[1] === "left" ? 0 : 1, name };
   }
-  const renameNamed = text.match(/^rename (.+) to (.+)$/);
+  const renameNamed = text.match(/^rename\s+(.+?)\s+to\s+(.+)$/);
   if (renameNamed) {
     const side = teamSide(renameNamed[1], teams);
     const name = titleName(renameNamed[2]);
     if (side != null && name) return { type: "rename", side, name };
   }
 
-  if (/^(switch|swap|change) (sides|side|teams|ends)$/.test(text)) return { type: "switchSides" };
-  const sound = text.match(/^(?:turn )?(?:the )?sounds? (on|off)$/);
-  if (sound) return { type: "sound", enabled: sound[1] === "on" };
-  if (/^keep (?:the )?screen on$/.test(text)) return { type: "wake", enabled: true };
-  if (/^(?:let (?:the )?screen sleep|screen can sleep|screen can turn off)$/.test(text)) return { type: "wake", enabled: false };
-  if (/^(nobody(?: is)? serving|no one(?: is)? serving|noone serving|clear(?: the)? serve|stop serving)$/.test(text)) {
+  if (/^(?:switch|swap|change)(?:\s+the)?\s+(?:sides|side|teams|ends)$/.test(text)) return { type: "switchSides" };
+  const sound = text.match(/^(?:turn\s+)?(?:the\s+)?sounds?(?:\s+is)?\s+(on|off)$/)
+    || text.match(/^(?:mute|unmute)(?:\s+the)?\s+sounds?$/);
+  if (sound) return { type: "sound", enabled: sound[1] ? sound[1] === "on" : sound[0].startsWith("unmute") };
+  if (/^keep(?:\s+the)?\s+screen\s+on$/.test(text)) return { type: "wake", enabled: true };
+  if (/^(?:dont|do not)\s+(?:let\s+)?(?:the\s+)?screen\s+(?:go\s+to\s+)?sleep$/.test(text)) return { type: "wake", enabled: true };
+  if (/^(?:let(?:\s+the)?\s+screen\s+sleep|screen\s+can\s+sleep|screen\s+can\s+turn\s+off)$/.test(text)) {
+    return { type: "wake", enabled: false };
+  }
+  if (/^(?:(?:nobody|no one|noone)(?:\s+is)?\s+serving|clear(?:\s+the)?\s+serve|stop\s+serving)$/.test(text)) {
     return { type: "clearServe" };
   }
   return null;
@@ -571,7 +588,7 @@ export function parseCommand(raw, teams) {
   if (!text) return { type: "ignore", attempt: false, reason: "empty" };
 
   const meta = metaCommand(text) || settingsCommand(text, teams);
-  if (meta) return meta;
+  if (meta) return { ...meta, explicit: true };
   if (text.split(" ").length > 14) return { type: "ignore", attempt: false, reason: "too-long" };
 
   const targets = new Set(GUESS_WORDS);
@@ -586,7 +603,7 @@ export function parseCommand(raw, teams) {
   const tokens = snappedTokens.tokens;
   if (snappedTokens.snapped) {
     const guessedMeta = metaCommand(tokens.join(" ")) || settingsCommand(tokens.join(" "), teams);
-    if (guessedMeta) return { ...guessedMeta, guessed: true };
+    if (guessedMeta) return { ...guessedMeta, explicit: true, guessed: true };
   }
   if (tokens.some((token) => NEGATIONS.has(token))) {
     return { type: "ignore", attempt: false, reason: "negated" };
