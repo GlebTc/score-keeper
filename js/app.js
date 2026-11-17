@@ -2,7 +2,7 @@ import { normalize, parseCommand, sharedVoiceKeys } from "./parse.js";
 import { PRESETS, currentTarget, gamePointTeams, matchWinner, setWinner } from "./rules.js";
 
 const STORAGE_KEY = "score-keeper-v1";
-const COLOR_NAMES = new Set(["red", "blue", "green", "orange", "purple", "gold", "pink", "teal"]);
+const COLOR_NAMES = new Set(["red", "blue", "green", "orange", "purple", "gold", "yellow", "pink", "teal"]);
 const SWATCHES = {
   red: "#ff4d4d",
   blue: "#4c8dff",
@@ -10,6 +10,7 @@ const SWATCHES = {
   orange: "#ff8a3d",
   purple: "#a56bff",
   gold: "#f5c451",
+  yellow: "#ffe14a",
   pink: "#ff6fa8",
   teal: "#2ec8c0",
 };
@@ -726,11 +727,21 @@ function setWinByTwo(enabled) {
 function setTeamColor(index, colorName) {
   const color = SWATCHES[colorName];
   if (!color) return;
-  pushHistory(`${sideLabel(index)} color`);
+  pushHistory(`${state.teams[index].name} color`);
   state.teams[index].color = color;
   commit();
   fillForm();
-  sayChange(`${sideLabel(index)} is ${colorName}.`);
+  sayChange(`${state.teams[index].name} is ${colorName}.`);
+}
+
+function swapColors() {
+  pushHistory("Switch colors");
+  const first = state.teams[0].color;
+  state.teams[0].color = state.teams[1].color;
+  state.teams[1].color = first;
+  commit();
+  fillForm();
+  sayChange("Colors switched.");
 }
 
 function renameTeam(index, name) {
@@ -853,6 +864,10 @@ function applyCommand(command, transcript) {
   }
   if (command.type === "color") {
     setTeamColor(command.side, command.color);
+    return;
+  }
+  if (command.type === "swapColors") {
+    swapColors();
     return;
   }
   if (command.type === "rename") {

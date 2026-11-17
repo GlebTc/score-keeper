@@ -193,7 +193,7 @@ const KNOWN = new Set([
   "correction",
 ]);
 
-const COLORS = ["red", "blue", "green", "orange", "purple", "gold", "pink", "teal"];
+const COLORS = ["red", "blue", "green", "orange", "purple", "gold", "yellow", "pink", "teal"];
 const COLOR_PATTERN = COLORS.join("|");
 const SCORE_LIMIT = 999;
 const NEGATIONS = new Set(["no", "not", "dont", "never"]);
@@ -223,6 +223,7 @@ const GUESS_WORDS = new Set([
   "nobody",
   "orange",
   "purple",
+  "yellow",
   "screen",
 ]);
 
@@ -452,7 +453,10 @@ function teamSide(label, teams) {
     const keys = [...(team.keys || [])];
     if (index === 0) keys.push("left");
     if (index === 1) keys.push("right");
-    if (keys.some((key) => normalize(key) === text)) hits.push(index);
+    if (keys.some((key) => {
+      const norm = normalize(key);
+      return text === norm || text === `${norm}s`;
+    })) hits.push(index);
   });
   return hits.length === 1 ? hits[0] : null;
 }
@@ -498,6 +502,13 @@ function settingsCommand(text, teams) {
     || text.match(new RegExp(`^colou?r(?:\\s+of)?(?:\\s+the)?\\s+${sideColor}$`))
     || text.match(new RegExp(`^(?:make|change|set|turn)(?:\\s+the)?(?:\\s+colou?r(?:\\s+of)?)?(?:\\s+the)?\\s+${sideColor}$`));
   if (color) return { type: "color", side: color[1] === "left" ? 0 : 1, color: color[2] };
+  if (/^(?:switch|swap)(?:\s+the)?(?:\s+team)?\s+colou?rs$/.test(text)) return { type: "swapColors" };
+  const namedColor = text.match(new RegExp(`^(?:switch|change|make|set|turn)(?:\\s+the)?\\s+(.+?)\\s+(?:team\\s+)?(?:colou?r\\s+)?(?:to\\s+)?(${COLOR_PATTERN})$`));
+  if (namedColor) {
+    const who = namedColor[1].replace(/\s+team$/, "").trim();
+    const side = who === "left" ? 0 : who === "right" ? 1 : teamSide(who, teams);
+    if (side != null) return { type: "color", side, color: namedColor[2] };
+  }
 
   const renameSide = text.match(/^rename(?:\s+the)?\s+(left|right)(?:\s+team)?(?:\s+to)?\s+(.+)$/);
   if (renameSide) {
