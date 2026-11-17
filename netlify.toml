@@ -1,0 +1,32 @@
+# Static site. Netlify publishes this folder as-is.
+# The test script checks the voice commands before each deploy.
+[build]
+  publish = "."
+  command = "npm test"
+
+# Always revalidate the pages and the service worker so a refresh
+# picks up a new scoreboard instead of a cached copy.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Cache-Control = "no-cache"

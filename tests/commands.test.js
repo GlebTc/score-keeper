@@ -1,0 +1,115 @@
+import assert from "node:assert/strict";
+import { parseCommand } from "../js/parse.js";
+import { currentTarget, gamePointTeams, matchWinner, setWinner } from "../js/rules.js";
+
+const teams = [
+  { id: "a", keys: ["red"] },
+  { id: "b", keys: ["blue"] },
+];
+
+function cmd(text, custom = teams) {
+  return parseCommand(text, custom);
+}
+
+function expectAdd(text, teamId, amount) {
+  const result = cmd(text);
+  assert.equal(result.type, "add", `${text} -> ${JSON.stringify(result)}`);
+  assert.equal(result.teamId, teamId);
+  assert.equal(result.amount, amount);
+}
+
+expectAdd("red plus 1", "a", 1);
+expectAdd("red plus one", "a", 1);
+expectAdd("read plus one", "a", 1);
+expectAdd("rad plus 1", "a", 1);
+expectAdd("Red + 1", "a", 1);
+expectAdd("add 2 to blue", "b", 2);
+expectAdd("please add two points to blue", "b", 2);
+expectAdd("could you please add two points to blue", "b", 2);
+expectAdd("blue point", "b", 1);
+expectAdd("point for red", "a", 1);
+expectAdd("one point blue", "b", 1);
+expectAdd("blew plus one", "b", 1);
+expectAdd("increment red", "a", 1);
+expectAdd("red 2", "a", 2);
+expectAdd("give red two", "a", 2);
+expectAdd("left score plus 1", "a", 1);
+expectAdd("left score", "a", 1);
+expectAdd("right score plus 1", "b", 1);
+expectAdd("right plus 1", "b", 1);
+assert.equal(cmd("left blue plus 1").reason, "conflict");
+
+assert.equal(cmd("blue minus 1").type, "subtract");
+assert.equal(cmd("blue minus 1").amount, 1);
+assert.equal(cmd("blue team minus 1").type, "subtract");
+assert.equal(cmd("blue team minus 1").teamId, "b");
+assert.equal(cmd("blue team minus one point").type, "subtract");
+assert.equal(cmd("blue team minors 1").type, "subtract");
+assert.equal(cmd("blue team serves").type, "serve");
+assert.equal(cmd("blue serves").type, "serve");
+assert.equal(cmd("blue is serving").type, "serve");
+assert.equal(cmd("service blue").type, "serve");
+assert.equal(cmd("take 2 from red").type, "subtract");
+assert.equal(cmd("take 2 from red").teamId, "a");
+assert.equal(cmd("red down 1").type, "subtract");
+assert.equal(cmd("penalty blue").type, "subtract");
+
+assert.equal(cmd("undo").type, "undo");
+assert.equal(cmd("take that back").type, "undo");
+assert.equal(cmd("what's the score?").type, "announce");
+assert.equal(cmd("what is the score").type, "announce");
+assert.equal(cmd("new game").type, "reset");
+assert.equal(cmd("yes").type, "confirm");
+assert.equal(cmd("stop listening").type, "stop");
+assert.equal(cmd("red serve").type, "serve");
+assert.equal(cmd("red wins the set").type, "awardSet");
+assert.equal(cmd("award set to blue").type, "awardSet");
+assert.equal(cmd("next set").type, "newSet");
+
+assert.equal(cmd("red blue plus 1").reason, "conflict");
+assert.equal(cmd("hello there").attempt, false);
+assert.equal(cmd("nice point").attempt, false);
+assert.equal(cmd("red").attempt, false);
+assert.equal(cmd("plus one").reason, "which-team");
+assert.equal(cmd("red plus 20").reason, "too-big");
+assert.equal(cmd("red banana").reason, "unrecognized");
+
+const hawks = [
+  { id: "a", keys: ["red hawks"] },
+  { id: "b", keys: ["blue"] },
+];
+assert.equal(cmd("red hawks plus 1", hawks).teamId, "a");
+assert.equal(cmd("read hawks plus 1", hawks).teamId, "a");
+expectAdd("reed plus one", "a", 1);
+expectAdd("red pluss one", "a", 1);
+expectAdd("blu point", "b", 1);
+expectAdd("red get a point", "a", 1);
+expectAdd("i want one point for red", "a", 1);
+expectAdd("nice point red", "a", 1);
+expectAdd("one more for red", "a", 1);
+assert.equal(cmd("reed plus one").guessed, true);
+assert.equal(cmd("red plus 1").guessed, undefined);
+assert.equal(cmd("red no point").type, "ignore");
+assert.equal(cmd("minos one blue").type, "subtract");
+assert.equal(cmd("minos one blue").teamId, "b");
+
+const volleyball = { pointsToWin: 25, winByTwo: true, setsToWin: 2, decidingPoints: 15 };
+assert.equal(setWinner([25, 23], [0, 0], volleyball), 0);
+assert.equal(setWinner([25, 24], [0, 0], volleyball), null);
+assert.equal(setWinner([26, 24], [0, 0], volleyball), 0);
+assert.equal(setWinner([24, 0], [0, 0], volleyball), null);
+assert.equal(currentTarget([1, 1], volleyball), 15);
+assert.equal(setWinner([15, 13], [1, 1], volleyball), 0);
+assert.equal(setWinner([15, 14], [1, 1], volleyball), null);
+assert.equal(setWinner([30, 10], [0, 0], { pointsToWin: 0, winByTwo: false, setsToWin: 0, decidingPoints: 0 }), null);
+assert.equal(matchWinner([2, 1], volleyball), 0);
+assert.equal(matchWinner([1, 1], volleyball), null);
+assert.equal(matchWinner([1, 0], { ...volleyball, setsToWin: 0 }), null);
+assert.deepEqual(gamePointTeams([24, 22], [0, 0], volleyball), [0]);
+assert.deepEqual(gamePointTeams([24, 24], [0, 0], volleyball), []);
+assert.deepEqual(gamePointTeams([25, 24], [0, 0], volleyball), [0]);
+assert.deepEqual(gamePointTeams([14, 12], [1, 1], volleyball), [0]);
+assert.deepEqual(gamePointTeams([9, 9], [0, 0], { pointsToWin: 10, winByTwo: false, setsToWin: 1, decidingPoints: 10 }), [0, 1]);
+assert.deepEqual(gamePointTeams([20, 19], [0, 0], { pointsToWin: 0, winByTwo: false, setsToWin: 0, decidingPoints: 0 }), []);
+
+console.log("commands.test.js passed");

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#07080d">
+    <meta name="description" content="Voice-activated scoreboard. Say “red plus 1” to add a point.">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Score Keeper">
+    <title>Score Keeper</title>
+    <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/styles.css">
+  </head>
+  <body>
+    <div id="live" class="sr-only" aria-live="polite"></div>
+    <p id="support" class="support" hidden></p>
+    <div class="app">
+      <header class="top">
+        <div class="top-row">
+          <h1>Score Keeper</h1>
+          <div class="top-actions">
+          <button type="button" class="icon-btn" id="undo" aria-label="Undo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8H4v5"/><path d="M4.5 12.5a8 8 0 1 0 2.2-6.3L4 8"/></svg>
+          </button>
+          <button type="button" class="icon-btn" id="reset-match" aria-label="New game">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.2-5.6L20 8"/><path d="M20 4v4h-4"/></svg>
+          </button>
+          <button type="button" class="icon-btn" id="settings-open" aria-label="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h6M14 17h6"/><circle cx="16" cy="7" r="2.2"/><circle cx="12" cy="17" r="2.2"/></svg>
+          </button>
+          </div>
+        </div>
+        <p class="eyebrow" id="kicker">Free play</p>
+      </header>
+
+      <main class="board" aria-label="Scoreboard">
+        <article class="team" id="card-0" style="--team:#ff4d4d">
+          <h2 class="team-name" id="name-0">Red</h2>
+          <p class="voice-hint" id="hint-0">Say “red plus 1”</p>
+          <div class="team-main">
+            <p class="score" id="score-0">0</p>
+            <div class="meter" id="meter-0" hidden><span id="meter-bar-0"></span></div>
+            <p class="sets" id="sets-0" hidden>Sets 0</p>
+          </div>
+          <div class="controls">
+            <button type="button" class="minus" id="sub-0" aria-label="Remove a point from Red">−</button>
+            <button type="button" class="plus" id="add-0" aria-label="Add a point to Red">+</button>
+          </div>
+          <button type="button" class="serve" id="serve-0" aria-pressed="false">Serve</button>
+        </article>
+        <article class="team" id="card-1" style="--team:#4c8dff">
+          <h2 class="team-name" id="name-1">Blue</h2>
+          <p class="voice-hint" id="hint-1">Say “blue plus 1”</p>
+          <div class="team-main">
+            <p class="score" id="score-1">0</p>
+            <div class="meter" id="meter-1" hidden><span id="meter-bar-1"></span></div>
+            <p class="sets" id="sets-1" hidden>Sets 0</p>
+          </div>
+          <div class="controls">
+            <button type="button" class="minus" id="sub-1" aria-label="Remove a point from Blue">−</button>
+            <button type="button" class="plus" id="add-1" aria-label="Add a point to Blue">+</button>
+          </div>
+          <button type="button" class="serve" id="serve-1" aria-pressed="false">Serve</button>
+        </article>
+      </main>
+
+      <footer class="listen">
+        <button type="button" class="mic" id="mic" aria-pressed="false" aria-label="Start listening">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v3M8 20h8"/></svg>
+        </button>
+        <div class="listen-copy">
+          <p id="listen-status">Tap the mic, then say “red plus 1”.</p>
+          <p id="listen-detail">Or tap the + buttons.</p>
+          <form id="command-form" class="command-form">
+            <label class="sr-only" for="command-input">Type a command</label>
+            <input id="command-input" placeholder="or type “red plus 1”" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
+            <button type="submit" class="command-go">Go</button>
+          </form>
+        </div>
+      </footer>
+    </div>
+
+    <p id="toast" class="toast" hidden></p>
+
+    <div id="confirm" class="confirm" hidden>
+      <div class="confirm-card">
+        <p id="confirm-text">Reset the whole match?</p>
+        <div class="confirm-actions">
+          <button type="button" class="btn ghost" id="confirm-no">Cancel</button>
+          <button type="button" class="btn primary" id="confirm-yes">Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="match-overlay" class="overlay" hidden>
+      <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="match-title">
+        <p class="eyebrow">Match</p>
+        <h2 id="match-title">Red wins</h2>
+        <p id="match-sub">Sets 2 to 1</p>
+        <div class="overlay-actions">
+          <button type="button" class="btn ghost" id="match-undo">Undo last point</button>
+          <button type="button" class="btn primary" id="match-new">New game</button>
+        </div>
+      </div>
+    </div>
+
+    <dialog id="settings" aria-labelledby="settings-title">
+      <div class="dialog-head">
+        <h2 id="settings-title">Settings</h2>
+        <button type="button" class="btn primary" id="settings-close">Done</button>
+      </div>
+
+      <div class="team-settings">
+        <fieldset>
+          <legend>Team 1</legend>
+          <label class="field">Name <input id="name-input-0" maxlength="24" autocomplete="off"></label>
+          <label class="field">Voice word <input id="voice-input-0" maxlength="24" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <p class="hint">This is the word you say: “red plus 1”.</p>
+          <label class="field color-field">Color <input id="color-input-0" type="color"></label>
+          <div class="swatches" aria-label="Team 1 colors">
+            <button type="button" class="swatch" data-team="0" data-voice="red" data-color="#ff4d4d" style="background:#ff4d4d" aria-label="Red"></button>
+            <button type="button" class="swatch" data-team="0" data-voice="blue" data-color="#4c8dff" style="background:#4c8dff" aria-label="Blue"></button>
+            <button type="button" class="swatch" data-team="0" data-voice="green" data-color="#2fbf71" style="background:#2fbf71" aria-label="Green"></button>
+            <button type="button" class="swatch" data-team="0" data-voice="orange" data-color="#ff8a3d" style="background:#ff8a3d" aria-label="Orange"></button>
+            <button type="button" class="swatch" data-team="0" data-voice="purple" data-color="#a56bff" style="background:#a56bff" aria-label="Purple"></button>
+            <button type="button" class="swatch" data-team="0" data-voice="gold" data-color="#f5c451" style="background:#f5c451" aria-label="Gold"></button>
+            <button type="button" class="swatch" data-team="0" data-voice="pink" data-color="#ff6fa8" style="background:#ff6fa8" aria-label="Pink"></button>
+            <button type="button" class="swatch" data-team="0" data-voice="teal" data-color="#2ec8c0" style="background:#2ec8c0" aria-label="Teal"></button>
+          </div>
+          <div class="split">
+            <label class="field">Points <input id="points-input-0" type="number" min="0" max="999" inputmode="numeric"></label>
+            <label class="field">Sets <input id="sets-input-0" type="number" min="0" max="99" inputmode="numeric"></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Team 2</legend>
+          <label class="field">Name <input id="name-input-1" maxlength="24" autocomplete="off"></label>
+          <label class="field">Voice word <input id="voice-input-1" maxlength="24" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <p class="hint">This is the word you say: “blue plus 1”.</p>
+          <label class="field color-field">Color <input id="color-input-1" type="color"></label>
+          <div class="swatches" aria-label="Team 2 colors">
+            <button type="button" class="swatch" data-team="1" data-voice="red" data-color="#ff4d4d" style="background:#ff4d4d" aria-label="Red"></button>
+            <button type="button" class="swatch" data-team="1" data-voice="blue" data-color="#4c8dff" style="background:#4c8dff" aria-label="Blue"></button>
+            <button type="button" class="swatch" data-team="1" data-voice="green" data-color="#2fbf71" style="background:#2fbf71" aria-label="Green"></button>
+            <button type="button" class="swatch" data-team="1" data-voice="orange" data-color="#ff8a3d" style="background:#ff8a3d" aria-label="Orange"></button>
+            <button type="button" class="swatch" data-team="1" data-voice="purple" data-color="#a56bff" style="background:#a56bff" aria-label="Purple"></button>
+            <button type="button" class="swatch" data-team="1" data-voice="gold" data-color="#f5c451" style="background:#f5c451" aria-label="Gold"></button>
+            <button type="button" class="swatch" data-team="1" data-voice="pink" data-color="#ff6fa8" style="background:#ff6fa8" aria-label="Pink"></button>
+            <button type="button" class="swatch" data-team="1" data-voice="teal" data-color="#2ec8c0" style="background:#2ec8c0" aria-label="Teal"></button>
+          </div>
+          <div class="split">
+            <label class="field">Points <input id="points-input-1" type="number" min="0" max="999" inputmode="numeric"></label>
+            <label class="field">Sets <input id="sets-input-1" type="number" min="0" max="99" inputmode="numeric"></label>
+          </div>
+        </fieldset>
+      </div>
+      <p id="voice-warning" class="warning" hidden></p>
+      <p class="hint">Editing points here does not finish a set by itself. Use + or a voice command for that.</p>
+
+      <fieldset>
+        <legend>Match</legend>
+        <div class="presets" role="group" aria-label="Match type">
+          <button type="button" data-preset="free">Free play</button>
+          <button type="button" data-preset="volleyball">Volleyball</button>
+          <button type="button" data-preset="tabletennis">Table tennis</button>
+          <button type="button" data-preset="to21">First to 21</button>
+        </div>
+        <p class="hint" id="rules-hint"></p>
+        <div class="split">
+          <label class="field">Points to win a set <input id="points-to-win" type="number" min="0" max="99" inputmode="numeric"></label>
+          <label class="field">Sets to win the match <input id="sets-to-win" type="number" min="0" max="9" inputmode="numeric"></label>
+        </div>
+        <label class="check" id="winby-row"><input id="win-by-two" type="checkbox"> Must win by 2</label>
+        <label class="field" id="deciding-row">Deciding set points <input id="deciding-points" type="number" min="0" max="99" inputmode="numeric"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Voice and screen</legend>
+        <label class="check"><input id="sound-toggle" type="checkbox"> Play a sound for points and read the score aloud</label>
+        <label class="check"><input id="wake-toggle" type="checkbox"> Keep the screen on during a match</label>
+        <label class="check"><input id="keep-toggle" type="checkbox"> Keep listening after each command</label>
+        <p class="hint">On iPhone and iPad, leave this off and tap the mic once per point. Commands are in English.</p>
+      </fieldset>
+
+      <details>
+        <summary>Voice commands</summary>
+        <ul>
+          <li>“Red plus 1”, “blue point”, “add 2 to red”</li>
+          <li>“Left score plus 1” and “right plus 1” score the team on that side</li>
+          <li>Rough English still counts. “Reed plus won” is taken as red plus 1, and the guess is shown so you can undo it.</li>
+          <li>“Blue team minus 1” removes a point, even if you also say “point”</li>
+          <li>“Undo”</li>
+          <li>“Blue serve” or “blue is serving” lights up that team. Scoring a point does this too</li>
+          <li>“What’s the score?”</li>
+          <li>When one more point wins the set, the app says “Game point” out loud</li>
+          <li>“Red wins the set”</li>
+          <li>“Next set”</li>
+          <li>“New game”, then “yes”</li>
+          <li>“Stop” turns the mic off</li>
+        </ul>
+        <p class="hint">Keys: 1 and 2 add a point, Shift+1 and Shift+2 remove one, U undoes, M or Space toggles the mic.</p>
+      </details>
+
+      <div class="install-block">
+        <button type="button" class="btn primary" id="install-btn" hidden>Install app</button>
+        <p id="ios-hint" class="hint" hidden>On iPhone or iPad: tap Share, then Add to Home Screen. After it has loaded once, it also works offline.</p>
+        <p class="hint">Scores stay on this device. Chrome, Edge, and Safari can hear commands. Use the buttons or the text box in other browsers.</p>
+      </div>
+    </dialog>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
