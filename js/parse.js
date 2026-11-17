@@ -41,6 +41,10 @@ const TENS = {
   thirty: 30,
   forty: 40,
   fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
 };
 
 const FILLERS = new Set([
@@ -184,11 +188,14 @@ const KNOWN = new Set([
   "away",
   "off",
   "set",
+  "change",
+  "correct",
+  "correction",
 ]);
 
 const COLORS = ["red", "blue", "green", "orange", "purple", "gold", "pink", "teal"];
 const COLOR_PATTERN = COLORS.join("|");
-const MAX_POINTS = 10;
+const SCORE_LIMIT = 999;
 const NEGATIONS = new Set(["no", "not", "dont", "never"]);
 const GUESS_WORDS = new Set([
   ...PLUS_WORDS,
@@ -350,7 +357,10 @@ function findTeam(tokens, teams) {
     for (const key of keys) {
       const keyTokens = key.split(" ");
       for (let i = 0; i <= tokens.length - keyTokens.length; i += 1) {
-        const matches = keyTokens.every((part, offset) => tokens[i + offset] === part);
+        const matches = keyTokens.every((part, offset) => {
+          const token = tokens[i + offset];
+          return token === part || token === `${part}s`;
+        });
         if (matches) hits.push({ team, index: i, length: keyTokens.length });
       }
     }
@@ -365,7 +375,7 @@ function findTeam(tokens, teams) {
 function pullNumber(tokens) {
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
-    if (/^\d{1,2}$/.test(token)) {
+    if (/^\d+$/.test(token)) {
       return { value: Number(token), rest: tokens.filter((_, index) => index !== i) };
     }
     if (token in TENS) {
@@ -499,6 +509,17 @@ function settingsCommand(text, teams) {
   return null;
 }
 
+function isExactScore(remaining, amount) {
+  if (amount == null) return false;
+  const adding = remaining.some((token) => PLUS_WORDS.includes(token) && token !== "score" && token !== "scores");
+  const subtracting = remaining.some((token) => MINUS_WORDS.includes(token));
+  if (adding || subtracting) return false;
+  if (remaining.includes("score") || remaining.includes("scores")) return true;
+  const awarding = remaining.some((token) => AWARD_WORDS.includes(token));
+  if (!awarding && remaining.includes("set")) return true;
+  return remaining.includes("change") || remaining.includes("correct") || remaining.includes("correction");
+}
+
 function interpret(remaining, amount) {
   const unknown = remaining.filter((token) => !KNOWN.has(token));
   if (unknown.length) {
@@ -510,6 +531,11 @@ function interpret(remaining, amount) {
     }
     const tried = remaining.some((token) => STRONG_WORDS.has(token));
     return { type: "ignore", attempt: tried, reason: "unrecognized" };
+  }
+
+  if (isExactScore(remaining, amount)) {
+    if (amount > SCORE_LIMIT) return { type: "ignore", attempt: true, reason: "too-big" };
+    return { type: "setScore", amount, explicit: true };
   }
 
   const wantsAward =
@@ -531,7 +557,7 @@ function interpret(remaining, amount) {
     return { type: "ignore", attempt: true, reason: "ambiguous" };
   }
   if (amount === 0) return { type: "ignore", attempt: true, reason: "zero" };
-  if (amount != null && amount > MAX_POINTS) return { type: "ignore", attempt: true, reason: "too-big" };
+  if (amount != null && amount > SCORE_LIMIT) return { type: "ignore", attempt: true, reason: "too-big" };
 
   if (wantsAward) return { type: "awardSet", explicit: true };
   if (wantsServe && amount == null) return { type: "serve", explicit: true };

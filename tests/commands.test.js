@@ -127,7 +127,20 @@ assert.equal(cmd("hello there").attempt, false);
 assert.equal(cmd("nice point").attempt, false);
 assert.equal(cmd("red").attempt, false);
 assert.equal(cmd("plus one").reason, "which-team");
-assert.equal(cmd("red plus 20").reason, "too-big");
+expectAdd("red plus 20", "a", 20);
+expectAdd("red plus 21", "a", 21);
+assert.equal(cmd("red score 21").type, "setScore");
+assert.equal(cmd("red score 21").teamId, "a");
+assert.equal(cmd("red score 21").amount, 21);
+assert.equal(cmd("red score is 21").type, "setScore");
+assert.equal(cmd("red's score is twenty one").amount, 21);
+assert.equal(cmd("set red score to 21").type, "setScore");
+assert.equal(cmd("left score 21").teamId, "a");
+assert.equal(cmd("blue score 0").amount, 0);
+assert.equal(cmd("change blue to 15").type, "setScore");
+assert.equal(cmd("change blue to 15").amount, 15);
+assert.equal(cmd("red score plus 5").type, "add");
+assert.equal(cmd("red plus 1000").reason, "too-big");
 assert.equal(cmd("red banana").reason, "unrecognized");
 
 const hawks = [

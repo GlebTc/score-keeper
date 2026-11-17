@@ -35,8 +35,8 @@ const HINTS = {
   conflict: "Name one team at a time.",
   ambiguous: "Try a simpler phrase, like “red plus 1”.",
   unrecognized: "Try “red plus 1”.",
-  "too-big": "Add or remove up to 10 points at a time.",
-  zero: "Say a number from 1 to 10.",
+  "too-big": "Use a number up to 999.",
+  zero: "Say a number above 0.",
 };
 
 let state;
@@ -54,6 +54,12 @@ let ignoreUntil = 0;
 let wakeLock = null;
 let deferredInstall = null;
 let audioCtx = null;
+let spoken = null;
+let speakGen = 0;
+let speakTimer = 0;
+let speechHold = false;
+let speechUnlocked = false;
+let warnedSpeech = false;
 
 function isIOS() {
   const ua = navigator.userAgent;
@@ -441,6 +447,28 @@ function gamePointCall() {
   return "";
 }
 
+function setScore(index, amount) {
+  if (scoringLocked()) {
+    toast("The match is over. Start a new game or undo the last point.");
+    return;
+  }
+  const name = state.teams[index].name;
+  const next = clamp(amount, 0, 999);
+  if (next === state.scores[index]) {
+    setDetail(`${name} is already at ${next}`);
+    speak(`${name} is already at ${next}.`);
+    return;
+  }
+  pushHistory(`${name} to ${next}`);
+  state.scores[index] = next;
+  confirmOpen = false;
+  commit();
+  flash(index);
+  chime(true);
+  setDetail(`${name} ${next}`);
+  speak(scoreAnnouncement());
+}
+
 function subPoints(index, amount) {
   if (scoringLocked()) {
     toast("The match is over. Undo the last point or start a new game.");
@@ -552,18 +580,105 @@ function undo() {
   toast(`Undid ${prev.label}`);
 }
 
+function isAndroid() {
+  return /Android/i.test(navigator.userAgent);
+}
+
+function englishVoice(synth) {
+  const voices = synth.getVoices?.() || [];
+  return voices.find((voice) => voice.lang === "en-US")
+    || voices.find((voice) => /^en/i.test(voice.lang || ""))
+    || null;
+}
+
+function unlockSpeech() {
+  const synth = window.speechSynthesis;
+  if (!synth || speechUnlocked) return;
+  speechUnlocked = true;
+  synth.getVoices?.();
+  synth.resume?.();
+  const utterance = new SpeechSynthesisUtterance("");
+  utterance.volume = 0;
+  spoken = utterance;
+  try {
+    synth.speak(utterance);
+  } catch {
+    /* this browser will not speak */
+  }
+}
+
+function holdMicForSpeech() {
+  if (!recognition) return;
+  speechHold = micWanted;
+  window.clearTimeout(restartTimer);
+  releaseRecognizer();
+}
+
+function releaseMicAfterSpeech() {
+  if (!speechHold) return;
+  speechHold = false;
+  if (!micWanted || document.visibilityState === "hidden") return;
+  if (!state.keepListening || isIOS()) return;
+  startListening();
+}
+
+function finishSpeech(gen) {
+  if (gen !== speakGen) return;
+  window.clearTimeout(speakTimer);
+  ignoreUntil = performance.now() + 400;
+  releaseMicAfterSpeech();
+}
+
 function speak(text) {
   announce(text);
-  if (!state.sound || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-US";
-  utterance.rate = 1.02;
-  ignoreUntil = performance.now() + 2800;
-  utterance.onend = () => {
-    ignoreUntil = performance.now() + 300;
+  const synth = window.speechSynthesis;
+  if (!state.sound || !synth) return;
+  const gen = ++speakGen;
+  window.clearTimeout(speakTimer);
+  holdMicForSpeech();
+
+  const say = () => {
+    if (gen !== speakGen) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    spoken = utterance;
+    utterance.lang = "en-US";
+    utterance.rate = 1.02;
+    utterance.volume = 1;
+    const voice = englishVoice(synth);
+    if (voice) utterance.voice = voice;
+    ignoreUntil = performance.now() + Math.min(8000, 1200 + text.length * 70);
+    utterance.onend = () => finishSpeech(gen);
+    utterance.onerror = () => finishSpeech(gen);
+    synth.speak(utterance);
+    synth.resume?.();
+    speakTimer = window.setTimeout(() => finishSpeech(gen), Math.min(9000, 1800 + text.length * 80));
   };
-  window.speechSynthesis.speak(utterance);
+
+  const start = () => {
+    if (gen !== speakGen) return;
+    if (synth.speaking || synth.pending) {
+      try {
+        synth.cancel();
+      } catch {
+        /* nothing was speaking */
+      }
+      speakTimer = window.setTimeout(say, 80);
+      return;
+    }
+    say();
+  };
+
+  if (isAndroid() && !warnedSpeech && synth.getVoices && !synth.getVoices().length) {
+    const warn = () => {
+      synth.removeEventListener("voiceschanged", warn);
+      if (warnedSpeech || synth.getVoices().length) return;
+      warnedSpeech = true;
+      toast("No speaking voice found. Turn on text-to-speech in your phone’s settings.");
+    };
+    synth.addEventListener("voiceschanged", warn);
+    window.setTimeout(warn, 1500);
+  }
+  start();
 }
 
 function sayScore() {
@@ -769,6 +884,7 @@ function applyCommand(command, transcript) {
   }
   const index = Number(command.teamId);
   if (command.type === "add") addPoints(index, command.amount);
+  else if (command.type === "setScore") setScore(index, command.amount);
   else if (command.type === "subtract") subPoints(index, command.amount);
   else if (command.type === "serve") setServer(index, { toggle: false });
   else if (command.type === "awardSet") awardSet(index);
@@ -929,6 +1045,8 @@ function attachRecognizer() {
 
 function startListening() {
   if (!speechCtor()) return;
+  unlockSpeech();
+  speechHold = false;
   window.clearTimeout(restartTimer);
   micStarts = 0;
   micWanted = true;
@@ -945,6 +1063,7 @@ function startListening() {
 }
 
 function stopListening() {
+  speechHold = false;
   window.clearTimeout(restartTimer);
   micWanted = false;
   listening = false;
@@ -965,6 +1084,7 @@ function setupRecognition() {
 }
 
 function pauseMic() {
+  speechHold = false;
   window.clearTimeout(restartTimer);
   releaseRecognizer();
   listening = false;
@@ -974,6 +1094,7 @@ function pauseMic() {
 }
 
 function resumeMic() {
+  if (speechHold) return;
   if (!micWanted || !state.keepListening || isIOS()) {
     listening = false;
     render();
@@ -1229,7 +1350,10 @@ function bindUi() {
   });
   window.addEventListener("pagehide", pauseMic);
   window.addEventListener("pageshow", resumeMic);
-  document.addEventListener("pointerdown", () => updateWake(), { once: true });
+  document.addEventListener("pointerdown", () => {
+    window.speechSynthesis?.getVoices?.();
+    updateWake();
+  }, { once: true });
 
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
@@ -1246,6 +1370,7 @@ function boot() {
   }
   const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
   if (isIOS() && !standalone) $("ios-hint").hidden = false;
+  window.speechSynthesis?.getVoices?.();
   setupRecognition();
   bindUi();
   bindSettings();
