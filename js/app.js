@@ -3,6 +3,22 @@ import { PRESETS, currentTarget, gamePointTeams, matchWinner, setWinner } from "
 
 const STORAGE_KEY = "score-keeper-v1";
 const COLOR_NAMES = new Set(["red", "blue", "green", "orange", "purple", "gold", "pink", "teal"]);
+const SWATCHES = {
+  red: "#ff4d4d",
+  blue: "#4c8dff",
+  green: "#2fbf71",
+  orange: "#ff8a3d",
+  purple: "#a56bff",
+  gold: "#f5c451",
+  pink: "#ff6fa8",
+  teal: "#2ec8c0",
+};
+const PRESET_LABELS = {
+  free: "Free play.",
+  volleyball: "Volleyball.",
+  tabletennis: "Table tennis.",
+  to21: "First to 21.",
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -95,6 +111,8 @@ function loadState() {
         scores: pair(entry.scores, 999),
         sets: pair(entry.sets, 99),
         server: entry.server === 0 || entry.server === 1 ? entry.server : null,
+        teams: historyTeams(entry.teams),
+        rules: historyRules(entry.rules),
       }));
     const rules = { ...blank.rules, ...(raw.rules || {}) };
     rules.pointsToWin = clamp(rules.pointsToWin, 0, 99);
@@ -215,7 +233,7 @@ function celebrate(x, y, colors, count) {
     layer.appendChild(piece);
     pieces.push(piece);
   }
-  window.setTimeout(() => pieces.forEach((piece) => piece.remove()), 900);
+  window.setTimeout(() => pieces.forEach((piece) => piece.remove()), 1200);
 }
 
 function celebrateTeam(index, count) {
@@ -225,12 +243,35 @@ function celebrateTeam(index, count) {
   celebrate(rect.left + rect.width / 2, rect.top + rect.height * 0.38, colors, count);
 }
 
+function historyTeams(value) {
+  if (!Array.isArray(value) || value.length !== 2) return undefined;
+  return value.map((team, index) => ({
+    name: String(team?.name || "").replace(/\s+/g, " ").trim().slice(0, 24) || `Team ${index + 1}`,
+    voice: normalize(team?.voice).slice(0, 24) || `team${index + 1}`,
+    color: cleanColor(team?.color, index === 0 ? "#ff4d4d" : "#4c8dff"),
+  }));
+}
+
+function historyRules(value) {
+  if (!value || typeof value !== "object") return undefined;
+  const preset = PRESETS[value.preset] || value.preset === "custom" ? value.preset : "custom";
+  return {
+    pointsToWin: clamp(value.pointsToWin, 0, 99),
+    winByTwo: Boolean(value.winByTwo),
+    setsToWin: clamp(value.setsToWin, 0, 9),
+    decidingPoints: clamp(value.decidingPoints, 0, 99),
+    preset,
+  };
+}
+
 function pushHistory(label) {
   state.history.push({
     label,
     scores: [...state.scores],
     sets: [...state.sets],
     server: state.server,
+    teams: state.teams.map((team) => ({ ...team })),
+    rules: { ...state.rules },
   });
   if (state.history.length > 40) state.history.shift();
 }
@@ -354,7 +395,6 @@ function addPoints(index, amount) {
   flash(index);
   chime(true);
   vibrate();
-  celebrateTeam(index, 12);
   const call = gamePointCall();
   setDetail(call || `${name} +${amount}`);
   if (call) speak(call);
@@ -470,8 +510,11 @@ function undo() {
   state.scores = [...prev.scores];
   state.sets = [...prev.sets];
   state.server = prev.server === 0 || prev.server === 1 ? prev.server : null;
+  if (prev.teams) state.teams = prev.teams.map((team) => ({ ...team }));
+  if (prev.rules) state.rules = { ...prev.rules };
   confirmOpen = false;
   commit();
+  fillForm();
   setDetail(`Undid ${prev.label}`);
   announce(`Undid ${prev.label}. ${scoreAnnouncement()}`);
   toast(`Undid ${prev.label}`);
@@ -495,6 +538,115 @@ function sayScore() {
   const text = scoreAnnouncement();
   setDetail(text);
   speak(text);
+}
+
+function sideLabel(index) {
+  return index === 0 ? "Left" : "Right";
+}
+
+function sayChange(message) {
+  setDetail(message);
+  speak(message);
+}
+
+function usePreset(name) {
+  pushHistory(PRESET_LABELS[name] || "Rules");
+  applyPreset(name);
+  sayChange(PRESET_LABELS[name] || "Rules updated.");
+}
+
+function setPointsTarget(points) {
+  pushHistory(`Play to ${points}`);
+  state.rules = { ...state.rules, pointsToWin: points, preset: "custom" };
+  commit();
+  fillForm();
+  sayChange(`Play to ${points}.`);
+}
+
+function setSetsTarget(sets) {
+  pushHistory(`First to ${sets} sets`);
+  state.rules = { ...state.rules, setsToWin: sets, preset: "custom" };
+  commit();
+  fillForm();
+  sayChange(`First to ${sets} ${sets === 1 ? "set" : "sets"}.`);
+}
+
+function setWinByTwo(enabled) {
+  pushHistory(enabled ? "Win by 2" : "No win by 2");
+  state.rules = { ...state.rules, winByTwo: enabled, preset: "custom" };
+  commit();
+  fillForm();
+  sayChange(enabled ? "Must win by 2." : "No need to win by 2.");
+}
+
+function setTeamColor(index, colorName) {
+  const color = SWATCHES[colorName];
+  if (!color) return;
+  pushHistory(`${sideLabel(index)} color`);
+  state.teams[index].color = color;
+  commit();
+  fillForm();
+  sayChange(`${sideLabel(index)} is ${colorName}.`);
+}
+
+function renameTeam(index, name) {
+  const clean = String(name || "").replace(/\s+/g, " ").trim().slice(0, 24);
+  if (!clean) return;
+  pushHistory("Rename");
+  state.teams[index].name = clean;
+  commit();
+  fillForm();
+  sayChange(`${sideLabel(index)} is now ${clean}.`);
+}
+
+function switchSides() {
+  pushHistory("Switch sides");
+  state.teams.reverse();
+  state.scores.reverse();
+  state.sets.reverse();
+  if (state.server === 0) state.server = 1;
+  else if (state.server === 1) state.server = 0;
+  commit();
+  fillForm();
+  sayChange("Sides switched.");
+}
+
+function setSound(enabled) {
+  state.sound = enabled;
+  persist();
+  fillForm();
+  const message = enabled ? "Sound on." : "Sound off.";
+  setDetail(message);
+  if (enabled) speak(message);
+  else announce(message);
+}
+
+function setWake(enabled) {
+  state.wake = enabled;
+  persist();
+  fillForm();
+  updateWake();
+  const message = enabled ? "Screen stays on." : "Screen can sleep.";
+  setDetail(message);
+  speak(message);
+}
+
+function saySets() {
+  const text = `Sets. ${state.teams[0].name} ${state.sets[0]}, ${state.teams[1].name} ${state.sets[1]}.`;
+  setDetail(text);
+  speak(text);
+}
+
+function clearServer() {
+  if (state.server == null) {
+    setDetail("Nobody is serving.");
+    return;
+  }
+  pushHistory("Serve cleared");
+  state.server = null;
+  commit();
+  setDetail("Nobody is serving.");
+  speak("Nobody is serving.");
 }
 
 function applyCommand(command, transcript) {
@@ -537,6 +689,50 @@ function applyCommand(command, transcript) {
   }
   if (command.type === "newSet") {
     clearPoints();
+    return;
+  }
+  if (command.type === "preset") {
+    usePreset(command.preset);
+    return;
+  }
+  if (command.type === "pointsTo") {
+    setPointsTarget(command.points);
+    return;
+  }
+  if (command.type === "setsTo") {
+    setSetsTarget(command.sets);
+    return;
+  }
+  if (command.type === "winByTwo") {
+    setWinByTwo(command.enabled);
+    return;
+  }
+  if (command.type === "color") {
+    setTeamColor(command.side, command.color);
+    return;
+  }
+  if (command.type === "rename") {
+    renameTeam(command.side, command.name);
+    return;
+  }
+  if (command.type === "switchSides") {
+    switchSides();
+    return;
+  }
+  if (command.type === "sound") {
+    setSound(command.enabled);
+    return;
+  }
+  if (command.type === "wake") {
+    setWake(command.enabled);
+    return;
+  }
+  if (command.type === "setsAnnounce") {
+    saySets();
+    return;
+  }
+  if (command.type === "clearServe") {
+    clearServer();
     return;
   }
   const index = Number(command.teamId);

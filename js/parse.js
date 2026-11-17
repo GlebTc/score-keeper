@@ -186,6 +186,8 @@ const KNOWN = new Set([
   "set",
 ]);
 
+const COLORS = ["red", "blue", "green", "orange", "purple", "gold", "pink", "teal"];
+const COLOR_PATTERN = COLORS.join("|");
 const MAX_POINTS = 10;
 const NEGATIONS = new Set(["no", "not", "dont", "never"]);
 const GUESS_WORDS = new Set([
@@ -209,6 +211,12 @@ const GUESS_WORDS = new Set([
   "zero",
   "points",
   "score",
+  "volleyball",
+  "rename",
+  "nobody",
+  "orange",
+  "purple",
+  "screen",
 ]);
 
 function editDistance(left, right) {
@@ -390,8 +398,95 @@ function metaCommand(text) {
   if (/^(new game|new match|start over|reset|reset game|reset match|reset the game|reset the match|reset everything|clear game|clear the game|clear match|clear the match|restart game|restart the game|restart match|restart the match)$/.test(text)) {
     return { type: "reset" };
   }
+  if (/^(how many sets|how many sets are there|what are the sets|whats the sets)$/.test(text)) {
+    return { type: "setsAnnounce" };
+  }
   if (text.split(" ").length <= 8 && /\b(what|whats|tell|current|how)\b.*\bscore\b/.test(text)) {
     return { type: "announce" };
+  }
+  return null;
+}
+
+function readSmallNumber(phrase) {
+  const tokens = phrase.trim().split(" ").filter(Boolean);
+  if (tokens.length === 1 && /^\d{1,2}$/.test(tokens[0])) return Number(tokens[0]);
+  if (tokens.length === 1 && tokens[0] in ONES) return ONES[tokens[0]];
+  if (tokens.length === 1 && tokens[0] in TENS) return TENS[tokens[0]];
+  if (tokens.length === 2 && tokens[0] in TENS && tokens[1] in ONES && ONES[tokens[1]] < 10) {
+    return TENS[tokens[0]] + ONES[tokens[1]];
+  }
+  return null;
+}
+
+function titleName(raw) {
+  const clean = String(raw || "").replace(/\s+/g, " ").trim().slice(0, 24);
+  if (!clean || !/[a-z0-9]/.test(clean)) return "";
+  return clean.replace(/\b[a-z0-9]/g, (letter) => letter.toUpperCase());
+}
+
+function teamSide(label, teams) {
+  const text = normalize(label);
+  if (!text) return null;
+  if (text === "left") return 0;
+  if (text === "right") return 1;
+  const hits = [];
+  teams.forEach((team, index) => {
+    const keys = [...(team.keys || [])];
+    if (index === 0) keys.push("left");
+    if (index === 1) keys.push("right");
+    if (keys.some((key) => normalize(key) === text)) hits.push(index);
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
+
+function settingsCommand(text, teams) {
+  const preset = text.match(/^(volleyball|volley ball)$/)
+    ? "volleyball"
+    : text.match(/^(table tennis|tabletennis|ping pong|pingpong)$/)
+      ? "tabletennis"
+      : text.match(/^(first to 21|first to twenty one)$/)
+        ? "to21"
+        : text.match(/^(free play|freeplay)$/)
+          ? "free"
+          : null;
+  if (preset) return { type: "preset", preset };
+
+  const playTo = text.match(/^play to (.+?)(?: points)?$/);
+  if (playTo) {
+    const points = readSmallNumber(playTo[1]);
+    if (points >= 1 && points <= 99) return { type: "pointsTo", points };
+  }
+  const setsTo = text.match(/^first to (.+?) sets?$/);
+  if (setsTo && !/^21$|^twenty one$/.test(setsTo[1])) {
+    const sets = readSmallNumber(setsTo[1]);
+    if (sets >= 1 && sets <= 9) return { type: "setsTo", sets };
+  }
+  if (/^(?:must )?win by (?:2|two)$/.test(text)) return { type: "winByTwo", enabled: true };
+  if (/^(?:no|not|dont|do not) (?:must )?win by (?:2|two)$/.test(text)) return { type: "winByTwo", enabled: false };
+
+  const color = text.match(new RegExp(`^(left|right) colou?r (${COLOR_PATTERN})$`))
+    || text.match(new RegExp(`^(?:make|change|set|turn) (?:the )?(left|right)(?: team)?(?: colou?r)?(?: to)? (${COLOR_PATTERN})$`));
+  if (color) return { type: "color", side: color[1] === "left" ? 0 : 1, color: color[2] };
+
+  const renameSide = text.match(/^rename (?:the )?(left|right)(?: team)? to (.+)$/);
+  if (renameSide) {
+    const name = titleName(renameSide[2]);
+    if (name) return { type: "rename", side: renameSide[1] === "left" ? 0 : 1, name };
+  }
+  const renameNamed = text.match(/^rename (.+) to (.+)$/);
+  if (renameNamed) {
+    const side = teamSide(renameNamed[1], teams);
+    const name = titleName(renameNamed[2]);
+    if (side != null && name) return { type: "rename", side, name };
+  }
+
+  if (/^(switch|swap|change) (sides|side|teams|ends)$/.test(text)) return { type: "switchSides" };
+  const sound = text.match(/^(?:turn )?(?:the )?sounds? (on|off)$/);
+  if (sound) return { type: "sound", enabled: sound[1] === "on" };
+  if (/^keep (?:the )?screen on$/.test(text)) return { type: "wake", enabled: true };
+  if (/^(?:let (?:the )?screen sleep|screen can sleep|screen can turn off)$/.test(text)) return { type: "wake", enabled: false };
+  if (/^(nobody(?: is)? serving|no one(?: is)? serving|noone serving|clear(?: the)? serve|stop serving)$/.test(text)) {
+    return { type: "clearServe" };
   }
   return null;
 }
@@ -441,7 +536,7 @@ export function parseCommand(raw, teams) {
   const text = stripPrefix(normalize(raw));
   if (!text) return { type: "ignore", attempt: false, reason: "empty" };
 
-  const meta = metaCommand(text);
+  const meta = metaCommand(text) || settingsCommand(text, teams);
   if (meta) return meta;
   if (text.split(" ").length > 14) return { type: "ignore", attempt: false, reason: "too-long" };
 
@@ -456,7 +551,7 @@ export function parseCommand(raw, teams) {
   const snappedTokens = snapTokens(text.split(" "), targets);
   const tokens = snappedTokens.tokens;
   if (snappedTokens.snapped) {
-    const guessedMeta = metaCommand(tokens.join(" "));
+    const guessedMeta = metaCommand(tokens.join(" ")) || settingsCommand(tokens.join(" "), teams);
     if (guessedMeta) return { ...guessedMeta, guessed: true };
   }
   if (tokens.some((token) => NEGATIONS.has(token))) {
