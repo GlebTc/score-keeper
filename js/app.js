@@ -1,7 +1,7 @@
 import { normalize, parseCommand, sharedVoiceKeys } from "./parse.js";
 import { PRESETS, currentTarget, gamePointTeams, matchWinner, setWinner } from "./rules.js";
 
-const STORAGE_KEY = "score-keeper-v1";
+const STORAGE_KEY = "score-keeper-v2";
 const COLOR_NAMES = new Set(["red", "blue", "green", "orange", "purple", "gold", "yellow", "pink", "teal"]);
 const SWATCHES = {
   red: "#ff4d4d",
@@ -538,7 +538,7 @@ function clearPoints() {
 function askReset() {
   confirmOpen = true;
   render();
-  setDetail("Say “yes” to reset, or “no” to keep playing.");
+  setDetail("Say “yes”, “restart”, or “reset” to start over, or “no” to keep playing.");
   window.clearTimeout(confirmTimer);
   confirmTimer = window.setTimeout(() => {
     if (!confirmOpen) return;
@@ -724,21 +724,78 @@ function setWinByTwo(enabled) {
   sayChange(enabled ? "Must win by 2." : "No need to win by 2.");
 }
 
+function colorTitle(colorName) {
+  return colorName.charAt(0).toUpperCase() + colorName.slice(1);
+}
+
+function rgb(hex) {
+  const value = String(hex || "").replace("#", "");
+  if (value.length !== 6) return null;
+  return [0, 2, 4].map((index) => Number.parseInt(value.slice(index, index + 2), 16));
+}
+
+function colorNameFromHex(hex) {
+  const found = Object.entries(SWATCHES).find(([, value]) => value.toLowerCase() === String(hex || "").toLowerCase());
+  if (found) return found[0];
+  const picked = rgb(hex);
+  if (!picked) return "";
+  let best = "";
+  let bestDistance = Infinity;
+  for (const [name, value] of Object.entries(SWATCHES)) {
+    const color = rgb(value);
+    const distance = color.reduce((sum, channel, index) => sum + (channel - picked[index]) ** 2, 0);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = name;
+    }
+  }
+  return best;
+}
+
+function otherTeamUses(index, colorName) {
+  const other = state.teams[1 - index];
+  return normalize(other.voice) === colorName || normalize(other.name) === colorName;
+}
+
 function setTeamColor(index, colorName) {
   const color = SWATCHES[colorName];
   if (!color) return;
-  pushHistory(`${state.teams[index].name} color`);
-  state.teams[index].color = color;
+  const title = colorTitle(colorName);
+  const team = state.teams[index];
+  if (normalize(team.voice) === colorName && team.name === title && team.color.toLowerCase() === color.toLowerCase()) {
+    setDetail(`${team.name} is already ${colorName}.`);
+    return;
+  }
+  if (otherTeamUses(index, colorName)) {
+    const message = `The other team is already ${colorName}.`;
+    setDetail(message);
+    toast(message);
+    return;
+  }
+  const oldName = team.name;
+  pushHistory(`${oldName} to ${title}`);
+  team.color = color;
+  team.voice = colorName;
+  team.name = title;
   commit();
   fillForm();
-  sayChange(`${state.teams[index].name} is ${colorName}.`);
+  $(`name-${index}`).textContent = title;
+  $(`hint-${index}`).textContent = `Say “${colorName} plus 1”`;
+  sayChange(`${oldName} is now ${title}.`);
 }
 
 function swapColors() {
+  const next = [state.teams[1].color, state.teams[0].color];
+  const names = next.map(colorNameFromHex);
+  if (names[0] && names[1] && names[0] === names[1]) return;
   pushHistory("Switch colors");
-  const first = state.teams[0].color;
-  state.teams[0].color = state.teams[1].color;
-  state.teams[1].color = first;
+  state.teams.forEach((team, index) => {
+    team.color = next[index];
+    const colorName = names[index];
+    if (!colorName) return;
+    team.voice = colorName;
+    team.name = colorTitle(colorName);
+  });
   commit();
   fillForm();
   sayChange("Colors switched.");
@@ -819,7 +876,8 @@ function applyCommand(command, transcript) {
     return;
   }
   if (command.type === "confirm") {
-    if (confirmOpen || ! $("match-overlay").hidden) doReset();
+    if (confirmOpen || !$("match-overlay").hidden) doReset();
+    else if (transcript && /^(restart|reset|resset)$/.test(normalize(transcript))) askReset();
     return;
   }
   if (command.type === "cancel") {
@@ -838,7 +896,7 @@ function applyCommand(command, transcript) {
     return;
   }
   if (command.type === "reset") {
-    if (!$("match-overlay").hidden) doReset();
+    if (confirmOpen || !$("match-overlay").hidden) doReset();
     else askReset();
     return;
   }
@@ -1167,15 +1225,9 @@ function markCustomRules() {
   fillForm();
 }
 
-function applySwatch(index, voice, color) {
-  const team = state.teams[index];
-  const voiceWasColor = COLOR_NAMES.has(team.voice);
-  const nameWasColor = team.name.trim().toLowerCase() === team.voice;
-  team.color = color;
-  if (voiceWasColor) team.voice = voice;
-  if (nameWasColor && voiceWasColor) team.name = voice.charAt(0).toUpperCase() + voice.slice(1);
-  commit();
-  fillForm();
+function applySwatch(index, voice) {
+  if (!SWATCHES[voice]) return;
+  setTeamColor(index, voice);
 }
 
 function applyPreset(name) {
@@ -1207,9 +1259,12 @@ function bindSettings() {
       commit();
     });
     $(`color-input-${index}`).addEventListener("input", (event) => {
-      state.teams[index].color = event.target.value;
-      commit();
-      fillForm();
+      $(`card-${index}`).style.setProperty("--team", event.target.value);
+    });
+    $(`color-input-${index}`).addEventListener("change", (event) => {
+      const colorName = colorNameFromHex(event.target.value);
+      if (colorName) setTeamColor(index, colorName);
+      else fillForm();
     });
     $(`points-input-${index}`).addEventListener("change", (event) => {
       const next = clamp(event.target.value, 0, 999);
@@ -1232,7 +1287,7 @@ function bindSettings() {
 
   document.querySelectorAll(".swatch").forEach((button) => {
     button.addEventListener("click", () => {
-      applySwatch(Number(button.dataset.team), button.dataset.voice, button.dataset.color);
+      applySwatch(Number(button.dataset.team), button.dataset.voice);
     });
   });
   document.querySelectorAll("[data-preset]").forEach((button) => {
