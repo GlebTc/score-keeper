@@ -331,10 +331,42 @@ h1 { margin: 0; font-size: 1.2rem; }
   padding: 0.35rem 0.7rem;
 }
 
+.win-banner {
+  position: fixed;
+  inset: 0;
+  z-index: 32;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(7, 8, 13, 0.62);
+}
+
+.win-card {
+  width: min(40rem, 100%);
+  padding: 1.8rem 1.3rem 1.6rem;
+  text-align: center;
+  border-radius: 1.6rem;
+  background: color-mix(in srgb, var(--team, white) 72%, #141820);
+  border: 6px solid var(--team, white);
+  box-shadow: 0 0 48px color-mix(in srgb, var(--team, white) 45%, transparent);
+}
+
+.win-card h2 {
+  margin: 0.15rem 0 0.35rem;
+  font-size: clamp(2.8rem, 12vw, 6rem);
+  line-height: 0.95;
+}
+
+.win-card p { margin: 0; }
+
+.win-card #win-sub {
+  font-size: clamp(1.2rem, 3vw, 1.8rem);
+}
+
 .celebrate {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 36;
   pointer-events: none;
   overflow: hidden;
 }

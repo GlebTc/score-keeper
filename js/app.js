@@ -43,6 +43,7 @@ let state;
 let confirmOpen = false;
 let confirmTimer = 0;
 let toastTimer = 0;
+let winTimer = 0;
 let recognition = null;
 let listening = false;
 let micWanted = false;
@@ -171,6 +172,30 @@ function setDetail(text) {
 
 function setStatus(text) {
   $("listen-status").textContent = text;
+}
+
+function showWin(index, match) {
+  const name = state.teams[index].name;
+  const banner = $("win-banner");
+  banner.style.setProperty("--team", state.teams[index].color);
+  $("win-kicker").textContent = match ? "Match" : "Set";
+  $("win-title").textContent = match ? `${name} wins` : `${name} takes the set`;
+  $("win-sub").textContent = `Sets ${state.sets[0]} to ${state.sets[1]}`;
+  banner.hidden = false;
+  window.clearTimeout(winTimer);
+  winTimer = window.setTimeout(() => {
+    banner.hidden = true;
+  }, 5000);
+  const spoken = match
+    ? `${name} wins the match. Sets ${state.sets[0]} to ${state.sets[1]}.`
+    : `${name} takes the set. Sets ${state.sets[0]} to ${state.sets[1]}.`;
+  setDetail(match ? `${name} wins` : `${name} takes the set`);
+  speak(spoken);
+}
+
+function hideWin() {
+  window.clearTimeout(winTimer);
+  $("win-banner").hidden = true;
 }
 
 function toast(message) {
@@ -345,12 +370,24 @@ function render() {
   if ($("settings").open) syncOpenScoreFields();
 }
 
+function gameName() {
+  const names = {
+    free: "Free play",
+    volleyball: "Volleyball",
+    tabletennis: "Table tennis",
+    to21: "First to 21",
+    custom: "Custom",
+  };
+  return names[state.rules.preset] || "Custom";
+}
+
 function kickerText(target, locked) {
-  if (locked) return "Match over";
+  const game = gameName();
+  if (locked) return `${game} · Match over`;
   const played = state.sets[0] + state.sets[1];
-  if (!target && played === 0 && !state.rules.setsToWin) return "Free play";
-  const bits = [`Set ${played + 1}`];
-  if (target) bits.push(`first to ${target}`);
+  if (!target && played === 0 && !state.rules.setsToWin) return game;
+  const bits = [game, `Set ${played + 1}`];
+  if (target && !(state.rules.preset === "to21" && target === 21)) bits.push(`first to ${target}`);
   if (target && state.rules.winByTwo) bits.push("win by 2");
   return bits.join(" · ");
 }
@@ -375,7 +412,6 @@ function addPoints(index, amount) {
   state.server = index;
   const setWon = setWinner(state.scores, state.sets, state.rules);
   if (setWon != null) {
-    const winnerName = state.teams[setWon].name;
     state.sets[setWon] += 1;
     state.scores = [0, 0];
     confirmOpen = false;
@@ -383,10 +419,7 @@ function addPoints(index, amount) {
     flash(index);
     chime(true);
     vibrate();
-    const message = `${winnerName} takes the set`;
-    setDetail(message);
-    announce(`${message}. Sets ${state.sets[0]} to ${state.sets[1]}.`);
-    if (!scoringLocked()) toast(message);
+    showWin(setWon, scoringLocked());
     celebrateTeam(index, scoringLocked() ? 42 : 26);
     return;
   }
@@ -453,11 +486,8 @@ function awardSet(index) {
   state.scores = [0, 0];
   confirmOpen = false;
   commit();
-  const message = `${name} takes the set`;
-  setDetail(message);
-  announce(`${message}. Sets ${state.sets[0]} to ${state.sets[1]}.`);
-  if (!scoringLocked()) toast(message);
   chime(true);
+  showWin(index, scoringLocked());
   celebrateTeam(index, scoringLocked() ? 42 : 26);
 }
 
@@ -499,6 +529,7 @@ function doReset() {
   state.server = null;
   confirmOpen = false;
   commit();
+  hideWin();
   setDetail("New game");
   announce("New game. Scores cleared.");
   toast("New game");
@@ -513,6 +544,7 @@ function undo() {
   if (prev.teams) state.teams = prev.teams.map((team) => ({ ...team }));
   if (prev.rules) state.rules = { ...prev.rules };
   confirmOpen = false;
+  hideWin();
   commit();
   fillForm();
   setDetail(`Undid ${prev.label}`);

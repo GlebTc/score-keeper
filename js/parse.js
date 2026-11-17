@@ -401,10 +401,18 @@ function metaCommand(text) {
   if (/^(how many sets|how many sets are there|what are the sets|whats the sets)$/.test(text)) {
     return { type: "setsAnnounce" };
   }
-  if (text.split(" ").length <= 8 && /\b(what|whats|tell|current|how)\b.*\bscore\b/.test(text)) {
-    return { type: "announce" };
-  }
+  if (isScoreAsk(text)) return { type: "announce" };
   return null;
+}
+
+function isScoreAsk(text) {
+  if (/^(?:the )?score(?: please)?$/.test(text)) return true;
+  if (/^current score$/.test(text)) return true;
+  if (/^(?:who is|whos) (?:winning|ahead|up|leading|in the lead)$/.test(text)) return true;
+  if (/^(?:how many points|what are the points|whats the points)$/.test(text)) return true;
+  if (text.split(" ").length > 8) return false;
+  if (/\b(?:left|right|plus|minus|add|restart|reset|clear|undo|serve|serving|server)\b/.test(text)) return false;
+  return /\b(?:what|whats|tell|read|say|call|announce|give|repeat|current|how|hows)\b/.test(text) && /\bscore\b/.test(text);
 }
 
 function readSmallNumber(phrase) {
