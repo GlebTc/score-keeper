@@ -37,7 +37,6 @@ const HINTS = {
   ambiguous: "Try a simpler phrase, like “red plus 1”.",
   unrecognized: "Try “red plus 1”.",
   "too-big": "Use a number up to 999.",
-  zero: "Say a number above 0.",
 };
 
 let state;

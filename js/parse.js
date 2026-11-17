@@ -584,7 +584,9 @@ function interpret(remaining, amount) {
   if (kinds.length > 1 || (wantsServe && amount != null)) {
     return { type: "ignore", attempt: true, reason: "ambiguous" };
   }
-  if (amount === 0) return { type: "ignore", attempt: true, reason: "zero" };
+  if (amount === 0 && !wantsMinus && !plusVerb) {
+    return { type: "setScore", amount: 0, explicit: true };
+  }
   if (amount != null && amount > SCORE_LIMIT) return { type: "ignore", attempt: true, reason: "too-big" };
 
   if (wantsAward) return { type: "awardSet", explicit: true };
